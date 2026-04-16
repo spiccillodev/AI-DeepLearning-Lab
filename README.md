@@ -17,29 +17,14 @@ Benvenuti nel mio laboratorio di ***Computer Vision***. Questo repository rappre
 >[!TIP]
    > I benchmark dettagliati e i test sono disponibili nei Jupyter Notebook all'interno di ogni modulo.
 
-> _Real-time Inference & Neural Activation Mapping._ ![Model](https://img.shields.io/badge/Model-CNN%20Deep%20Learning-purple)
+> _Esempio:_  ![Model](https://img.shields.io/badge/Model-CNN%20Deep%20Learning-purple)
 
-
-![General Overview](assets\img\generale\classification.jpg)
-
-> _Riferimento progettuale._ 
+![General Overview](assets/img/generale/classification.png)
+> _Riferimento progettuale:_ 
 <img src="https://img.shields.io/badge/Scope-MNIST%20%7C%20CIFAR10%20Experiments-orange">
 
 <!-- Immagine es_generale -->
-
-![Esempio](assets\img\generale\es_generale.png)
-
-
-
-   
->[!WARNING]
-   >
-
->[!SUCCESS]
-   >
-
->[!ERROR]
-   >
+![Esempio](assets/img/generale/es_generale.png)
 
 ##  Features 
 
@@ -49,15 +34,11 @@ Benvenuti nel mio laboratorio di ***Computer Vision***. Questo repository rappre
    >- **<u>Logica di Ragionamento:</u>** Ogni classificazione include una spiegazione testuale dei pattern rilevati dal modello.
    >- **<u>Smart Random Inference:</u>** Algoritmo di selezione file intelligente che evita la ripetizione delle immagini di test durante le demo.
 
-
-
-
 ## Specifiche Hardware & Performance Stack
 
 <img src="https://img.shields.io/badge/GPU-Optimized%20Stack-green?logo=nvidia">
 <img src="https://img.shields.io/badge/Performance-High%20Throughput-blue">
 <img src="https://img.shields.io/badge/Architecture-RTX%2030%20%7C%2040%20Series-success">
-
 
 >[!INFO]
    >  Sistema ottimizzato per hardware di fascia alta, capace di massimizzare il throughput dei tensori sfruttando la VRAM (fino a 10× rispetto alla CPU), riducendo i tempi di training e migliorando la reattività in inferenza. Testato con successo su GPU NVIDIA serie 30 e 40, garantendo versatilità e prestazioni stabili su più generazioni.
@@ -170,7 +151,6 @@ AI-DeepLearning-Lab/
 <img src="https://img.shields.io/badge/Feature-Activation%20Mapping-purple">
 <img src="https://img.shields.io/badge/Logging-Persistent%20CSV-lightgrey">
 
-
 Il processo di creazione e validazione di ogni modello segue rigorosamente una pipeline standardizzata:
 
 1. **Tensor Analysis:** Calibrazione delle dimensioni Input/Output, normalizzazione e strategie di stochastic data augmentation.
@@ -224,31 +204,12 @@ Focus sulla scomposizione analitica della grafia in pattern geometrici puri.
 #### 🧠 Benchmark MNIST
 <p align="center">
 
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
 </p>
-
 <div align="center">
-
 <!-- Immagine es_generale
 - ![AI Animation](https://media0.giphy.com/media/v1. Y2lkPTc5MGI3NjExNHYzdXI0ODZlOXFnbGJzZGhzcW5tYjk0azZ0OXJ5cXJ3bzI1YXJtNiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/nNOAPjUdo4mpZFkDf8/giphy.gif) 
 -->
 </div>
-
-
-
 ---
 
 ### 🖥️ Performance Hardware (*RTX 3070*) ![GPU](https://img.shields.io/badge/NVIDIA-RTX%203070%20%2F%204060-green?logo=nvidia) ![CUDA](https://img.shields.io/badge/CUDA-Accelerated-green?logo=nvidia) ![Performance](https://img.shields.io/badge/Performance-High%20Throughput-blue)
@@ -323,8 +284,8 @@ Il modello dimostra:
 > Sotto un esempio di inferenza a bassa latenza con generazione dinamica di heatmap.
  </mark>
 
-![MNIST Demo](assets\img\MNIST\demo.png)
-![Inference Demo](assets\img\MNIST\3.gif)
+![MNIST Demo](assets/img/MNIST/demo.png)
+![Inference Demo](assets/img/MNIST/3.gif)
 ><mark>
 > Inference Demo:
 > Riconoscimento cifre e analisi dei gradienti in tempo reale.
