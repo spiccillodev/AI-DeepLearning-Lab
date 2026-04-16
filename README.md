@@ -8,7 +8,7 @@
 
 </p>
 
-![Lab Banner](assets\img\Banner\banner_lab.png)
+![Lab Banner](assets/img/Banner/banner_lab.png)
 
 ## Project Overview
 
