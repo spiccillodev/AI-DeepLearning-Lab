@@ -1,0 +1,35 @@
+--- CORE AI STACK ---
+
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.24.0
+
+--- VISUALIZATION & GUI ---
+
+matplotlib>=3.7.0
+Pillow>=9.5.0
+
+--- TELEMETRY & TOOLS ---
+
+tqdm>=4.65.0
+tensorboard>=2.12.0
+
+--- OPTIONAL: ANALYSIS & EXPORT ---
+
+onnx>=1.14.0  (Attiva se userai Netron per i grafi)
+
+
+### 💡 Perché questi e non altri?
+
+1.  **`torch` & `torchvision`**: Il cuore del laboratorio. Gestiscono i tensori, l'accelerazione CUDA per la tua 3070 e il download automatico del dataset MNIST.
+2.  **`numpy`**: Fondamentale per la manipolazione dei dati prima che diventino tensori e per gestire le matrici dei risultati.
+3.  **`matplotlib`**: È il motore della tua "GUI" e quello che genera il file `comparison_results.png`.
+4.  **`tqdm`**: Gestisce le barre di caricamento eleganti che vedi nel terminale durante le epoche.
+5.  **`tensorboard`**: Indispensabile per la telemetria che hai attivato. Senza questo, il comando `tensorboard --logdir` non funzionerebbe.
+6.  **`Pillow`**: Anche se non lo importi sempre direttamente, è la libreria che `torchvision` usa dietro le quinte per leggere le immagini.
+
+### 🛠️ Come usarlo in modo pulito:
+Quando sarai pronto a sistemare l'ambiente, ti basterà dare questo comando nel terminale (assicurati di essere dentro la cartella `01-MNIST-Digits`):
+
+```bash
+pip install -r requirements.txt
