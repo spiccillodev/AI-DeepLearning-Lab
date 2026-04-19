@@ -2,7 +2,7 @@
 torch>=2.0.0
 torchvision>=0.15.0
 numpy>=1.24.0
-protobuf==3.20.3
+protobuf
 onnx==1.21.0
 onnxscript==0.6.2
 
