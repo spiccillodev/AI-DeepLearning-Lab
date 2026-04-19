@@ -1,52 +1,36 @@
+"""
+Visualizzazione delle Attivazioni (Heatmap) per MNIST
+-----------------------------------------------------
+Questo script carica un'immagine di test e mostra come i primi
+strati convoluzionali del modello "vedono" l'immagine (Feature Maps).
+"""
+
 import torch
-import torch.nn as nn
 import torchvision.transforms as transforms
 from PIL import Image
 import matplotlib.pyplot as plt
 import os
-import numpy as np
 
-# --- CONFIGURAZIONE PERCORSI ESATTI (Z: Drive) ---
-# Usiamo le stringhe raw (r"") per evitare problemi con i backslash di Windows
-base_path = r"G:\Il mio Drive\CODING\Python\AI-DeepLearning-Lab\01-MNIST-Digits"
-model_path = os.path.join(base_path, "models", "cervello_numeri.pt")
-test_folder = os.path.join(base_path, "test_images")
+# 1. Importiamo il nostro pannello di controllo e l'architettura
+from config import BASE_DIR, MODEL_SAVE_PATH, DEVICE, NORM_MEAN, NORM_STD
+from mnist_ai import DigitNet
 
-# --- AUTO-CREAZIONE CARTELLA ---
-if not os.path.exists(test_folder):
-    os.makedirs(test_folder)
-    print(f"📂 Cartella creata: {test_folder}")
-    print("👉 Ora incolla una o più immagini (es. un numero scritto da te) in quella cartella!")
+# --- SETUP PERCORSO TEST ---
+TEST_FOLDER = BASE_DIR / "test"
+TEST_FOLDER.mkdir(parents=True, exist_ok=True)
 
-# --- ARCHITETTURA MNIST (Sincronizzata con il tuo training) ---
-class MNIST_CNN(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3),    # Livello 0: 28x28 -> 26x26
-            nn.ReLU(),                         # Livello 1
-            nn.MaxPool2d(2, 2),                # Livello 2: 26x26 -> 13x13
-            nn.Conv2d(32, 64, kernel_size=3),   # Livello 3: 13x13 -> 11x11
-            nn.ReLU(),                         # Livello 4
-            nn.Flatten(),                      # Livello 5: 11x11x64 = 7744
-            nn.Linear(7744, 128),               # Livello 6 (Quello dell'errore!)
-            nn.ReLU(),                         # Livello 7
-            nn.Linear(128, 10)                  # Livello 8
-        )
-
-    def forward(self, x):
-        return self.conv(x)
-
-def scan_neurons(image_name):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Caricamento Modello
-    if not os.path.exists(model_path):
-        print(f"❌ Errore: Non trovo il file del modello in {model_path}")
+def scan_neurons(image_name: str) -> None:
+    """
+    Carica un'immagine, la processa e visualizza le mappe di attivazione
+    del primo strato convoluzionale del modello addestrato.
+    """
+    if not MODEL_SAVE_PATH.exists():
+        print(f"❌ Errore: Non trovo il file del modello in {MODEL_SAVE_PATH}")
+        print("💡 Suggerimento: Hai eseguito mnist_ai.py per addestrare il modello prima?")
         return
 
-    model = MNIST_CNN().to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    model = DigitNet().to(DEVICE)
+    model.load_state_dict(torch.load(MODEL_SAVE_PATH, map_location=DEVICE, weights_only=True))
     model.eval()
 
     # Pre-elaborazione
@@ -54,24 +38,32 @@ def scan_neurons(image_name):
         transforms.Resize((28, 28)),
         transforms.Grayscale(),
         transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
+        transforms.Normalize((NORM_MEAN,), (NORM_STD,))
     ])
 
-    img_full_path = os.path.join(test_folder, image_name)
+    # Lettura immagine
+    img_full_path = TEST_FOLDER / image_name
     img = Image.open(img_full_path)
-    img_tensor = transform(img).unsqueeze(0).to(device)
+    
+    # FIX PYLANCE 1: Dichiariamo esplicitamente che il risultato è un Tensore
+    img_tensor: torch.Tensor = transform(img) # type: ignore
+    img_tensor = img_tensor.unsqueeze(0).to(DEVICE)
 
-    # --- ESTRAZIONE "PENSIERO" ---
+    # --- ESTRAZIONE "PENSIERO" (Feature Maps) ---
     with torch.no_grad():
-        x = model.conv[0](img_tensor) # Conv1
-        activations = model.conv[1](x) # ReLU
+        x = model.conv[0](img_tensor)
+        activations = model.conv[1](x)
     
     activations = activations.squeeze().cpu().numpy()
 
-    # --- DASHBOARD ---
+    # --- DASHBOARD MATPLOTLIB ---
     fig, axes = plt.subplots(4, 8, figsize=(12, 7))
-    fig.canvas.manager.set_window_title(f'Brain Scan - {image_name}')
-    fig.suptitle(f"Neuroni del 1° Strato: Risposta a '{image_name}'\nModello: cervello_numeri.pt", color='white', fontsize=14)
+    
+    # FIX PYLANCE 2: Controllo di sicurezza prima di impostare il titolo della finestra
+    if fig.canvas.manager is not None:
+        fig.canvas.manager.set_window_title(f'Brain Scan - {image_name}')
+        
+    fig.suptitle(f"Neuroni del 1° Strato: Risposta a '{image_name}'\nModello: {MODEL_SAVE_PATH.name}", color='white', fontsize=14)
     fig.set_facecolor('#121212')
 
     for i, ax in enumerate(axes.flat):
@@ -82,13 +74,14 @@ def scan_neurons(image_name):
     plt.tight_layout()
     plt.show()
 
+# --- ESECUZIONE PRINCIPALE ---
 if __name__ == "__main__":
-    # Cerchiamo file immagine nella cartella
-    immagini = [f for f in os.listdir(test_folder) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+    immagini = [f for f in os.listdir(TEST_FOLDER) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
     
     if immagini:
-        scan_neurons(immagini[0]) # Analizza la prima foto trovata
+        print(f"🔍 Trovata immagine: {immagini[0]}. Avvio scansione...")
+        scan_neurons(immagini[0]) 
     else:
-        print(f"\n⚠️  La cartella è pronta ma è VUOTA.")
-        print(f"Percorso: {test_folder}")
-        print("Metti un'immagine nera con un numero bianco e riavvia!")
+        print(f"\n⚠️ La cartella di test è pronta ma è VUOTA.")
+        print(f"📂 Percorso: {TEST_FOLDER}")
+        print("👉 Inserisci un'immagine (preferibilmente di dimensioni quadrate, sfondo nero e numero bianco) e riavvia lo script!")
