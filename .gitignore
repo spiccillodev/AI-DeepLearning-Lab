@@ -27,20 +27,19 @@ ai_gpu/
 # =========================
 # 🔹 DATASETS (MAI SU GIT)
 # =========================
-**/data/
+# Ignora TUTTO il contenuto dentro le cartelle data, ma non la cartella in sé
+**/data/*
 
-# mantieni struttura cartelle
+# Fai un'eccezione per il file .gitkeep
 !**/data/.gitkeep
 
 # =========================
 # 🔹 MODELS (PESANTI)
 # =========================
-**/models/
-
-# mantieni struttura
+**/models/*
 !**/models/.gitkeep
 
-# estensioni modelli (extra sicurezza)
+# estensioni modelli (extra sicurezza ovunque si trovino)
 *.pt
 *.pth
 *.onnx
@@ -50,12 +49,10 @@ ai_gpu/
 # =========================
 # 🔹 OUTPUT / TRAINING
 # =========================
-**/output/
+**/output/*
+!**/output/.gitkeep
 **/runs/
 **/logs/
-
-# mantieni struttura
-!**/output/.gitkeep
 
 # =========================
 # 🔹 FILE TEMPORANEI
