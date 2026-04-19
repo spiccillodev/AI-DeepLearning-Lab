@@ -28,11 +28,11 @@ Benvenuti nel mio laboratorio di ***Computer Vision***. Questo repository rappre
    > I benchmark dettagliati e i test sono disponibili nei Jupyter Notebook all'interno di ogni modulo.
 
 > _Esempio:_  ![Model](https://img.shields.io/badge/Model-CNN%20Deep%20Learning-purple)
-![General Overview](assets/img/generale/classification.png)
+![General Overview](assets/img/General/convolutional_neural_network.png)
 
 > _Riferimento progettuale:_
 > <img src="https://img.shields.io/badge/Scope-MNIST%20%7C%20CIFAR10%20Experiments-orange">
-![Esempio](assets/img/generale/es_generale.png)
+![Esempio](assets/img/General/old/es_generale.png)
 
 ---
 
@@ -54,7 +54,7 @@ Benvenuti nel mio laboratorio di ***Computer Vision***. Questo repository rappre
 >[!WARNING]
    > Sistema ottimizzato per hardware di fascia alta, capace di massimizzare il throughput dei tensori sfruttando la VRAM (fino a 10× rispetto alla CPU), riducendo i tempi di training e migliorando la reattività in inferenza. Testato con successo su GPU NVIDIA serie 30 e 40, garantendo versatilità e prestazioni stabili su più generazioni.
 
-![Deep Learning GPU Stack](assets/img/gpu_stack.png)
+![Deep Learning GPU Stack](assets/img/Workstation/workstation.png)
 
 | Componente | Specifiche Tecniche | Note sulle Prestazioni |
 |---|---|---|
@@ -139,7 +139,7 @@ Il processo di creazione e validazione di ogni modello segue rigorosamente una p
 10. **Model Export:** Conversione in formato <img src="https://img.shields.io/badge/ONNX-Neural%20Network%20Exchange-blue">  per la visualizzazione universale del grafo e il deployment.
 
 >*Esempio di monitoraggio della convergenza (Loss e Accuracy) via TensorBoard.*
-![Tensorboard curves](assets/img/generale/Tensorboard_curves.png)
+![Tensorboard curves](assets/img/General/Tensorboard_curves.png)
 
 ---
 ## Modelli e Ricerca Applicata
@@ -243,4 +243,3 @@ python src/predict_terminal.py
 <p align="center">
   <img src="https://img.shields.io/badge/%20Sviluppato%20con%20dedizione-Spiccillo-blueviolet?style=for-the-badge&logo=github" />
 </p>
-
