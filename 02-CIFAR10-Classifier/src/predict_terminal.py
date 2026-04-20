@@ -1,150 +1,151 @@
+import time
+import csv
+import random
+from datetime import datetime
+from pathlib import Path
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from PIL import Image
-import os
-import random
-import time
-import csv
-from datetime import datetime
-from tqdm import tqdm # <--- Fondamentale per la barra progressiva
+from tqdm import tqdm
 
-# --- CONFIGURAZIONE PERCORSI ---
-script_dir = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(script_dir, "models", "modello_cifar10.pt")
-test_folder = os.path.join(script_dir, "test_images")
-history_file = os.path.join(script_dir, ".prediction_history.txt")
-log_file = os.path.join(script_dir, "classificazioni_log.csv")
+# --- STANDARD LAB IMPORTS ---
+from config import (
+    DEVICE, CLASSES, MODEL_PATH, TEST_IMAGES_DIR, 
+    LOGS_DIR, BASE_DIR, NORM_MEAN, NORM_STD, HISTORY_FILE
+)
+from model import CifarNet
 
-classes = ('aereo', 'auto', 'uccello', 'gatto', 'cervo', 
-            'cane', 'rana', 'cavallo', 'nave', 'camion')
-
-reasoning_map = {
-    'aereo': "Gradienti orizzontali netti (ali) e sfondo uniforme (cielo).",
-    'auto': "Riflessi metallici e pattern circolari ad alta densità (ruote).",
-    'uccello': "Texture organiche (piume) e contrasto elevato con l'ambiente.",
-    'gatto': "Orecchie triangolari e gradienti radiali oculari.",
-    'cervo': "Arti sottili e possibili biforcazioni superiori (corna).",
-    'cane': "Texture variabile (pelo) e volumetria del muso prominente.",
-    'rana': "Saturazione cromatica specifica e riflessi cutanei umidi.",
+# --- COSTANTI DI LOGICA XAI ---
+REASONING_MAP = {
+    'aereo': "Gradienti orizzontali netti (ali) e sfondo uniforme (cielo/pista).",
+    'auto': "Riflessi metallici speculari e pattern circolari (ruote/fari).",
+    'uccello': "Texture organica piumata e silhouette con appendici sottili.",
+    'gatto': "Feature micro-geometriche: orecchie e gradienti radiali oculari.",
+    'cervo': "Silhouette snella con arti verticali e ramificazioni superiori.",
+    'cane': "Volumetria del muso prominente e texture di pelliccia irregolare.",
+    'rana': "Saturazione cromatica specifica e riflessi umidi sulla pelle.",
     'cavallo': "Muscolatura lineare e asse della testa allungato.",
-    'nave': "Massa orizzontale su texture periodica bluastra (onde).",
-    'camion': "Volumi rettangolari massicci e ripetizione di assi meccanici."
+    'nave': "Massa scura orizzontale su texture periodica bluastra (onde).",
+    'camion': "Box-volumes massicci con ripetizione di elementi rotanti."
 }
 
-# --- ARCHITETTURA ELITE (Sincronizzata) ---
-class SimpleCNN(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1_stage = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1), nn.ReLU(),
-            nn.MaxPool2d(2, 2)
-        )
-        self.conv2_final = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.final_stage = nn.Sequential(
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Flatten(),
-            nn.Linear(64 * 8 * 8, 512), nn.ReLU(),
-            nn.Linear(512, 10)
-        )
-    def forward(self, x):
-        x = self.conv1_stage(x)
-        x = self.conv2_final(x)
-        x = self.final_stage(x)
-        return x
-
-def print_header(hw_name):
-    print("\n" + "="*60)
-    print(f"       🧠 CIFAR-10 NEURAL INFERENCE SYSTEM 🧠")
-    print(f"       Hardware: {hw_name}")
-    print("="*60)
-
-def log_to_csv(filename, pred, conf):
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    real_class = os.path.splitext(filename)[0].lower()
-    status = "✅ AZZECCATO" if pred.lower() == real_class else "❌ SBAGLIATO"
+def log_prediction_to_csv(filename: str, prediction: str, confidence: float):
+    """Registra l'esito dell'inferenza in outputs/logs/ con encoding UTF-8."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    target_class = Path(filename).stem.lower()
+    is_correct = "✅ CORRETTO" if prediction.lower() == target_class else "❌ SBAGLIATO"
     
-    file_exists = os.path.isfile(log_file)
-    with open(log_file, mode='a', newline='', encoding='utf-8') as f:
+    # Percorso centralizzato in outputs/logs/
+    csv_path = LOGS_DIR / "classificazioni_log.csv"
+    headers = ["Data", "File", "IA_Pred", "Target", "Confidenza", "Esito"]
+    
+    file_exists = csv_path.exists()
+    # encoding='utf-8' fondamentale per Windows
+    with open(csv_path, mode='a', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         if not file_exists:
-            writer.writerow(["Data", "File", "IA", "Target", "Conf", "Esito"])
-        writer.writerow([now, filename, pred.upper(), real_class.upper(), f"{conf:.2f}%", status])
-    return status, real_class.upper()
+            writer.writerow(headers)
+        writer.writerow([
+            now, filename, prediction.upper(), 
+            target_class.upper(), f"{confidence:.1f}%", is_correct
+        ])
+    return is_correct, target_class.upper()
 
-def smart_select(files):
-    if os.path.exists(history_file):
-        with open(history_file, 'r') as f: history = [l.strip() for l in f.readlines()]
-    else: history = []
+def get_smart_selection(file_list: list[str]) -> str:
+    """Seleziona un file evitando ripetizioni immediate basandosi sulla cronologia."""    
+    history = []
+    if HISTORY_FILE.exists():
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            history = [line.strip() for line in f.readlines()]
     
-    available = [f for f in files if f not in history]
-    selected = random.choice(available) if available else random.choice(files)
+    available = [f for f in file_list if f not in history]
+    selected = random.choice(available if available else file_list)
     
-    history = (history + [selected])[-2:]
-    with open(history_file, 'w') as f: [f.write(f"{s}\n") for s in history]
+    # Mantiene una cronologia di 3 elementi per evitare ripetizioni immediate
+    history = (history + [selected])[-3:]
+    with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+        for item in history:
+            f.write(f"{item}\n")
+            
     return selected
 
-if __name__ == "__main__":
+def run_inference():
+    """Inference Engine via Terminale."""
     try:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        hw = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
-        print_header(hw)
+        # 1. Init UI
+        print("\n" + "="*65)
+        print(f"      🧠 CIFAR-10 TERMINAL INFERENCE 🧠")
+        print(f"      Hardware: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
+        print("="*65)
 
-        # Caricamento Modello
-        model = SimpleCNN().to(device)
-        model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+        # 2. Caricamento Modello
+        if not MODEL_PATH.exists():
+            raise FileNotFoundError(f"Pesi non trovati in: {MODEL_PATH}")
+
+        model = CifarNet().to(DEVICE)
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True))
         model.eval()
 
-        files = [f for f in os.listdir(test_folder) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
-        if not files:
-            print("❌ Errore: Cartella 'test_images' vuota!")
-            exit()
+        # 3. Selezione Immagine
+        valid_ext = {'.jpg', '.jpeg', '.png', '.JPG', '.PNG'}
+        image_files = [f.name for f in TEST_IMAGES_DIR.iterdir() if f.suffix in valid_ext]
+        
+        if not image_files:
+            raise FileNotFoundError(f"Nessuna immagine in: {TEST_IMAGES_DIR}")
 
-        selected_file = smart_select(files)
-        img_path = os.path.join(test_folder, selected_file)
+        selected_file = get_smart_selection(image_files)
+        img_path = TEST_IMAGES_DIR / selected_file
 
-        # --- SIMULAZIONE ANALISI CON TASKBAR ---
+        # 4. Simulazione Analisi
         print(f"\n📂 File in esame: {selected_file}")
         for _ in tqdm(range(100), desc="🧬 Analisi tensoriale", ascii=False, ncols=75):
-            time.sleep(0.01) # Simula il calcolo per rendere la barra fluida
+            time.sleep(0.005)
 
-        # Predizione effettiva
+        # 5. Preprocessing
         transform = transforms.Compose([
-            transforms.Resize((32, 32)), transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            transforms.Resize((32, 32)),
+            transforms.ToTensor(),
+            transforms.Normalize(NORM_MEAN, NORM_STD)
         ])
-        img = Image.open(img_path).convert('RGB')
-        input_t = transform(img).unsqueeze(0).to(device)
 
+        raw_image = Image.open(img_path).convert('RGB')
+        input_tensor: torch.Tensor = transform(raw_image) # type: ignore
+        input_batch = input_tensor.unsqueeze(0).to(DEVICE)
+
+        # 6. Inferenza
         with torch.no_grad():
-            out = model(input_t)
-            probs = F.softmax(out, dim=1)[0] * 100
+            output = model(input_batch)
+            probs = F.softmax(output, dim=1)[0] * 100
             top_p, top_i = torch.topk(probs, 3)
 
-        pred_label = classes[top_i[0].item()]
-        confidence = top_p[0].item()
+        # Estrazione dati con cast anti-warning
+        best_label = CLASSES[int(top_i[0])]
+        best_conf = float(top_p[0])
 
-        # Logging
-        esito, target = log_to_csv(selected_file, pred_label, confidence)
+        # 7. Logging & Display
+        esito, target = log_prediction_to_csv(selected_file, best_label, best_conf)
 
-        # --- OUTPUT PROFESSIONALE ---
-        print("\n" + "─"*60)
-        print(f"🎯 RISULTATO:  {pred_label.upper()} ({confidence:.2f}%)")
+        print("\n" + "─"*65)
+        print(f"🎯 RISULTATO:  {best_label.upper()} ({best_conf:.2f}%)")
         print(f"🏳️  TARGET:     {target}")
         print(f"🏁 ESITO:      {esito}")
-        print(f"💭 LOGICA:     {reasoning_map.get(pred_label)}")
-        print("─"*60)
+        print(f"💭 LOGICA:     {REASONING_MAP.get(best_label, 'Analisi pattern.')}")
+        print("─"*65)
 
         print("\n📊 DISTRIBUZIONE PROBABILITÀ (TOP 3):")
         for i in range(3):
-            c_idx = top_i[i].item()
-            c_prob = top_p[i].item()
-            bar_len = int(c_prob / 2)
+            idx = int(top_i[i])
+            prob = float(top_p[i])
+            bar_len = int(prob / 2)
             bar = "█" * bar_len + "░" * (50 - bar_len)
-            print(f"   {classes[c_idx].upper():<10} |{bar}| {c_prob:>5.1f}%")
-        print("─"*60 + "\n")
+            print(f"   {CLASSES[idx].upper():<10} |{bar}| {prob:>5.1f}%")
+        print("─"*65 + "\n")
+        print(f"📄 Registro aggiornato in: {LOGS_DIR / 'classificazioni_log.csv'}")
 
     except Exception as e:
-        print(f"\n⚠️  CRITICAL ERROR: {e}")
+        print(f"\n❌ ERRORE: {e}")
+
+if __name__ == "__main__":
+    run_inference()
