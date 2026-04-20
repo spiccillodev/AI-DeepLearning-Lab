@@ -10,8 +10,8 @@
   <a href="https://developer.nvidia.com/cuda-zone">
     <img src="https://img.shields.io/badge/CUDA-RTX%203070-76B900?style=for-the-badge&logo=nvidia&logoColor=white" />
   </a>
-  <a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" />
+ 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](./LICENSE)
   </a>
 </p>
 
