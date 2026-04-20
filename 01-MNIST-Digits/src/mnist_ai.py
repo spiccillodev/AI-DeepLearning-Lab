@@ -41,7 +41,7 @@ def run_experiment(lr: float, batch_size: int, epochs: int) -> dict:
     experiment_name = f"LR_{lr}_BS_{batch_size}"
     
     # Usiamo i percorsi definiti nel config (pathlib usa l'operatore /)
-    log_dir = config.OUTPUT_DIR / experiment_name
+    log_dir = config.OUTPUTS_DIR / experiment_name
     
     try:
         writer = SummaryWriter(log_dir=str(log_dir))
@@ -114,10 +114,10 @@ def run_experiment(lr: float, batch_size: int, epochs: int) -> dict:
 if __name__ == "__main__":
     
     # Pulizia automatica della cartella di output prima di iniziare nuovi test
-    if config.OUTPUT_DIR.exists():
-        print(f"🧹 Pulizia in corso: rimozione vecchi log in {config.OUTPUT_DIR}...")
-        shutil.rmtree(config.OUTPUT_DIR)
-    config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if config.OUTPUTS_DIR.exists():
+        print(f"🧹 Pulizia in corso: rimozione vecchi log in {config.OUTPUTS_DIR}...")
+        shutil.rmtree(config.OUTPUTS_DIR)
+    config.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Parametri per l'esperimento (potremmo prendere anche questi dal config se volessimo)
     learning_rates = [0.01, 0.001, 0.0001]
@@ -149,7 +149,7 @@ if __name__ == "__main__":
     ax2.grid(True)
 
     # Salvataggio usando pathlib
-    plot_path = config.OUTPUT_DIR / "comparison_results.png"
+    plot_path = config.OUTPUTS_DIR / "comparison_results.png"
     plt.savefig(plot_path)
     print(f"✅ Grafico salvato in: {plot_path}")
 
