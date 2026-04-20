@@ -1,219 +1,257 @@
+import time
+import random
+import csv
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
-from PIL import Image
-import os
-import random
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import numpy as np
 import cv2
-import csv
-from datetime import datetime
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from matplotlib.patches import Rectangle # Fix Pylance Rectangle
+from PIL import Image
 
-# --- CONFIGURAZIONE ESTETICA E PERCORSI ---
+# --- STANDARD LAB IMPORTS (Assicurati che config.py sia aggiornato) ---
+from config import (
+    DEVICE, CLASSES, MODEL_PATH, DATA_DIR, TEST_IMAGES_DIR, 
+    LOGS_DIR, PREDICTIONS_DIR, BASE_DIR, NORM_MEAN, NORM_STD, HISTORY_FILE
+)
+from model import CifarNet
+
+# --- CONFIGURAZIONE ESTETICA ---
 plt.style.use('dark_background')
-script_dir = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(script_dir, "models", "modello_cifar10.pt")
-test_folder = os.path.join(script_dir, "test_images")
-data_path = os.path.join(script_dir, "data")
-history_file = os.path.join(script_dir, ".prediction_history.txt")
-log_file = os.path.join(script_dir, "classificazioni_log.csv")
+COLOR_PALETTE = ['#2ecc71', '#3498db', '#e74c3c'] # Verde, Blu, Rosso
 
-classes = ('aereo', 'auto', 'uccello', 'gatto', 'cervo', 
-            'cane', 'rana', 'cavallo', 'nave', 'camion')
-
-# --- MAPPA DEL RAGIONAMENTO (IL PENSIERO DELL'IA) ---
-reasoning_map = {
-    'aereo': "Vettori orizzontali dominanti e contrasto netto con sfondo uniforme (cielo/pista).",
-    'auto': "Riflessi metallici speculari e pattern circolari ad alta densità (ruote/fari).",
-    'uccello': "Texture organica piumata e silhouette con appendici sottili (becco/zampe).",
-    'gatto': "Feature micro-geometriche: orecchie triangolari e gradienti radiali oculari.",
-    'cervo': "Silhouette snella con pattern di arti verticali lunghi e ramificazioni superiori.",
-    'cane': "Volumetria del muso prominente e texture di pelliccia a grana grossa/irregolare.",
-    'rana': "Saturazione cromatica specifica e riflessi di tipo speculare/umido sulla pelle.",
-    'cavallo': "Asse dorsale orizzontale muscoloso e cranio allungato con profilo lineare.",
-    'nave': "Massa scura orizzontale posizionata su texture periodica bluastra (onde).",
-    'camion': "Box-volumes massicci e squadrati con ripetizione seriale di elementi rotanti."
+# --- MAPPA DEL RAGIONAMENTO (XAI) ---
+REASONING_MAP = {
+    'aereo': "Gradienti orizzontali netti (ali) e sfondo uniforme (cielo/pista).",
+    'auto': "Riflessi metallici speculari e pattern circolari (ruote/fari).",
+    'uccello': "Texture organica piumata e silhouette con appendici sottili.",
+    'gatto': "Feature micro-geometriche: orecchie e gradienti radiali oculari.",
+    'cervo': "Silhouette snella con arti verticali e ramificazioni superiori.",
+    'cane': "Volumetria del muso prominente e texture di pelliccia irregolare.",
+    'rana': "Saturazione cromatica specifica e riflessi umidi sulla pelle.",
+    'cavallo': "Asse dorsale muscoloso e profilo del cranio allungato.",
+    'nave': "Massa scura orizzontale su texture periodica bluastra (onde).",
+    'camion': "Box-volumes massicci con ripetizione di elementi rotanti."
 }
 
-# --- ARCHITETTURA ELITE ---
-class SimpleCNN(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1_stage = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1), nn.ReLU(),
-            nn.MaxPool2d(2, 2)
-        )
-        self.conv2_final = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.final_stage = nn.Sequential(
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Flatten(),
-            nn.Linear(64 * 8 * 8, 512), nn.ReLU(),
-            nn.Linear(512, 10)
-        )
-        self.gradients = None
+# --- LOGICA GRAD-CAM (XAI) ---
+class GradCAM:
+    def __init__(self, model: torch.nn.Module, target_layer: torch.nn.Module):
+        self.model = model
+        self.target_layer = target_layer
+        # Usiamo Optional per i type hint di Pylance
+        self.gradients: Optional[torch.Tensor] = None
+        self.activations: Optional[torch.Tensor] = None
+        self.hook_layers()
 
-    def activations_hook(self, grad): self.gradients = grad
-    def get_activations_gradient(self): return self.gradients
-    def get_activations(self, x): return self.conv2_final(self.conv1_stage(x))
+    def hook_layers(self):
+        def forward_hook(module, input, output): 
+            self.activations = output
+            
+        def backward_hook(module, grad_in, grad_out): 
+            self.gradients = grad_out[0]
+        
+        # Registriamo gli hook per catturare attivazioni e gradienti
+        self.target_layer.register_forward_hook(forward_hook)
+        self.target_layer.register_full_backward_hook(backward_hook)
 
-    def forward(self, x):
-        x = self.conv1_stage(x)
-        x = self.conv2_final(x)
-        if x.requires_grad: x.register_hook(self.activations_hook)
-        x = self.final_stage(x)
-        return x
+    def generate(self, input_tensor: torch.Tensor, class_idx: int) -> np.ndarray:
+        self.model.zero_grad()
+        output = self.model(input_tensor)
+        score = output[0, class_idx]
+        score.backward()
 
-# --- LOGGING CSV ---
-def log_prediction_result(filename, prediction, confidence):
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    real_class = os.path.splitext(filename)[0].lower()
-    status = "✅ AZZECCATO" if prediction.lower() == real_class else "❌ SBAGLIATO"
-    file_exists = os.path.isfile(log_file)
-    with open(log_file, mode='a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(["Data/Ora", "File", "Predizione IA", "Classe Reale", "Confidenza", "Esito"])
-        writer.writerow([now, filename, prediction.upper(), real_class.upper(), f"{confidence:.2f}%", status])
-    return status
+        # Controllo di sicurezza dinamico
+        if self.gradients is None or self.activations is None:
+            return np.zeros((32, 32), dtype=np.float32)
 
-# --- GRAD-CAM ---
-def generate_grad_cam(model, input_tensor, target_index):
-    model.eval()
-    input_tensor.requires_grad_(True)
-    output = model(input_tensor)
-    score = output[0, target_index]
-    model.zero_grad()
-    score.backward()
-    gradients = model.get_activations_gradient()
-    activations = model.get_activations(input_tensor).detach()
-    pooled_gradients = torch.mean(gradients, dim=[0, 2, 3])
-    for i in range(64):
-        activations[:, i, :, :] *= pooled_gradients[i]
-    heatmap = torch.mean(activations, dim=1).squeeze().cpu()
-    heatmap = np.maximum(heatmap, 0)
-    heatmap /= (torch.max(heatmap) + 1e-8)
-    return heatmap.numpy()
+        gradients = self.gradients.detach()
+        activations = self.activations.detach()
+        
+        # Global Average Pooling dei gradienti
+        weights = torch.mean(gradients, dim=[2, 3], keepdim=True)
+        heatmap = torch.sum(weights * activations, dim=1).squeeze()
+        
+        # ReLU sulla heatmap (teniamo solo le zone che contribuiscono positivamente)
+        heatmap_np = np.maximum(heatmap.cpu().numpy(), 0)
+        max_val = np.max(heatmap_np)
+        if max_val > 0:
+            heatmap_np /= max_val
+            
+        return heatmap_np
 
-# --- UTILS ---
-def get_ref_images():
-    ds = torchvision.datasets.CIFAR10(root=data_path, train=False, download=True)
+# --- UTILITIES ---
+def get_reference_images():
+    """Scarica (se necessario) immagini di riferimento dal test set ufficiale."""
+    dataset = torchvision.datasets.CIFAR10(root=DATA_DIR, train=False, download=True)
     refs = {}
-    for img, label in ds:
+    for img, label in dataset:
         if label not in refs: refs[label] = img
         if len(refs) == 10: break
     return refs
 
-def get_smart_file(files):
+def get_smart_file():
+    """Seleziona un'immagine di test evitando ripetizioni basandosi sulla cronologia."""
+    files = [f.name for f in TEST_IMAGES_DIR.glob("*") if f.suffix.lower() in ['.jpg', '.jpeg', '.png']]
+    
+    if not files:
+        raise FileNotFoundError(f"Nessuna immagine trovata in {TEST_IMAGES_DIR}")
+
     history = []
-    if os.path.exists(history_file):
-        with open(history_file, 'r') as f: history = [l.strip() for l in f.readlines()]
+    if HISTORY_FILE.exists():
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f: 
+            history = [l.strip() for l in f.readlines()]
+    
     available = [f for f in files if f not in history]
-    selected = random.choice(available) if available else random.choice(files)
-    history = (history + [selected])[-2:]
-    with open(history_file, 'w') as f: [f.write(f"{s}\n") for s in history]
+    selected = random.choice(available if available else files)
+    
+    # Aggiorna la cronologia (mantiene gli ultimi 3)
+    history = (history + [selected])[-3:]
+    with open(HISTORY_FILE, 'w', encoding='utf-8') as f: 
+        for s in history: f.write(f"{s}\n")
     return selected
 
-# --- DASHBOARD MASTER ---
-def show_master_dashboard(img_path, result_data, heatmap, ref_imgs, hw_info, ambiguity_msg, status):
-    label, conf, top_probs, top_idxs = result_data
-    colors = ['#2ecc71', '#3498db', '#e74c3c']
-
-    fig = plt.figure(figsize=(16, 11), facecolor='#121212')
-    gs = gridspec.GridSpec(2, 3, height_ratios=[1.2, 1])
+def log_result(filename: str, pred: str, conf: float):
+    """Registra l'esito nel CSV dentro outputs/logs/ con encoding UTF-8."""
+    # PUNTO 2: Percorso corretto outputs/logs/
+    csv_path = LOGS_DIR / "classificazioni_log.csv"
     
-    fig.suptitle(f"CIFAR-10 ELITE ANALYSIS | {status}\n{hw_info}", 
-                    color='white' if "✅" in status else '#e74c3c', 
-                    fontsize=18, fontweight='bold', y=0.96)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    target = Path(filename).stem.lower()
+    status = "✅ CORRETTO" if pred.lower() == target else "❌ SBAGLIATO"
+    
+    # encoding='utf-8' per supportare ✅ e ❌ su Windows
+    with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow([now, filename, pred.upper(), target.upper(), f"{conf:.1f}%", status])
+    return status
 
-    # 1. Focus Heatmap
-    ax_main = fig.add_subplot(gs[0, 0])
-    img_bgr = cv2.imread(img_path)
-    heatmap_resized = cv2.resize(heatmap, (img_bgr.shape[1], img_bgr.shape[0]))
-    heatmap_colored = cv2.applyColorMap(np.uint8(255 * heatmap_resized), cv2.COLORMAP_JET)
-    superimposed = cv2.addWeighted(img_bgr, 0.6, heatmap_colored, 0.4, 0)
-    ax_main.imshow(cv2.cvtColor(superimposed, cv2.COLOR_BGR2RGB))
-    ax_main.set_title(f"DETTAGLI FEATURE: {label.upper()}", color=colors[0], pad=10, fontweight='bold')
-    ax_main.axis('off')
+# --- UI DASHBOARD ---
+def render_dashboard(img_path: Path, top_data: tuple, heatmap: np.ndarray, refs: dict, hw_info: str, status: str):
+    """Genera, salva e mostra la dashboard diagnostica XAI."""
+    best_label, best_conf, top_probs, top_idxs = top_data
+    
+    fig = plt.figure(figsize=(16, 10), facecolor='#121212')
+    gs = gridspec.GridSpec(2, 3, height_ratios=[1.2, 1], hspace=0.3)
+    
+    status_color = COLOR_PALETTE[0] if "✅" in status else COLOR_PALETTE[2]
+    fig.suptitle(f"CIFAR-10 XAI DIAGNOSTIC | {status}\n{hw_info}", 
+                    color=status_color, fontsize=20, fontweight='bold', y=0.97)
 
-    # 2. Probabilità
+    # 1. Pannello Heatmap (Grad-CAM) overlayed sull'originale
+    ax_cam = fig.add_subplot(gs[0, 0])
+    img_bgr = cv2.imread(str(img_path))
+    heatmap_res = cv2.resize(heatmap, (img_bgr.shape[1], img_bgr.shape[0]))
+    heatmap_col = cv2.applyColorMap(np.uint8(255 * heatmap_res), cv2.COLORMAP_JET)
+    overlay = cv2.addWeighted(img_bgr, 0.6, heatmap_col, 0.4, 0)
+    
+    ax_cam.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
+    ax_cam.set_title(f"ATTENZIONE IA: {best_label.upper()}", color=COLOR_PALETTE[0], pad=12)
+    ax_cam.axis('off')
+
+    # 2. Pannello Grafico a Barre delle Probabilità
     ax_bar = fig.add_subplot(gs[0, 1:])
-    y_labs = [classes[i.item()].upper() for i in top_idxs]
-    v = [p.item() for p in top_probs]
-    bars = ax_bar.barh(y_labs, v, color=colors, height=0.6)
+    y_labels = [CLASSES[int(i)].upper() for i in top_idxs]
+    values = [float(p) for p in top_probs]
+    
+    bars = ax_bar.barh(y_labels, values, color=COLOR_PALETTE, height=0.6)
     ax_bar.invert_yaxis()
-    ax_bar.set_xlim(0, 115)
+    ax_bar.set_xlim(0, 110)
     for bar in bars:
-        ax_bar.text(bar.get_width()+1, bar.get_y()+0.35, f"{bar.get_width():.1f}%", color='white', fontweight='bold')
+        ax_bar.text(bar.get_width() + 2, bar.get_y() + 0.35, f"{bar.get_width():.1f}%", 
+                    color='white', fontweight='bold')
+    
+    # Check Ambiguità spaziale tra TOP 1 e TOP 2
+    if (values[0] - values[1]) < 15:
+        ax_bar.text(50, -0.5, "⚠️ SEGNALE DEBOLE / AMBIGUITÀ RILEVATA", color='#f1c40f', 
+                    ha='center', bbox=dict(facecolor='#121212', edgecolor='#f1c40f', pad=5))
 
-    if ambiguity_msg:
-        ax_bar.text(55, -0.6, ambiguity_msg, color='#f1c40f', fontweight='bold', ha='center', 
-                    bbox=dict(facecolor='#121212', edgecolor='#f1c40f', pad=5, alpha=0.8))
-
-    # 3. Confronto e Ragionamento
+    # 3. Pannelli Confronto con immagini di riferimento ufficiali
     for i in range(3):
-        idx = top_idxs[i].item()
-        current_label = classes[idx]
+        idx = int(top_idxs[i])
         ax_ref = fig.add_subplot(gs[1, i])
-        ax_ref.imshow(ref_imgs[idx])
+        ax_ref.imshow(refs[idx])
         ax_ref.axis('off')
         
-        rect = plt.Rectangle((0,0), 31, 31, linewidth=8, edgecolor=colors[i], facecolor='none', alpha=0.8)
+        # Cornice colorata (Fix Rectangle per Pylance)
+        rect = Rectangle((0,0), 31, 31, linewidth=6, edgecolor=COLOR_PALETTE[i], facecolor='none')
         ax_ref.add_patch(rect)
+        ax_ref.set_title(f"{CLASSES[idx].upper()} ({values[i]:.1f}%)", color=COLOR_PALETTE[i], pad=8)
         
-        ax_ref.set_title(f"{current_label.upper()} ({v[i]:.1f}%)", color=colors[i], fontsize=11, fontweight='bold')
-        
-        # Aggiungiamo il ragionamento solo per la predizione principale
+        # Aggiungiamo la logica XAI solo per la predizione principale
         if i == 0:
-            reasoning = reasoning_map.get(current_label, "Analisi pattern complessa.")
-            ax_ref.text(16, 42, f"LOGICA: {reasoning}", color='white', 
-                        fontsize=9, ha='center', style='italic', wrap=True)
+            logic = REASONING_MAP.get(best_label, "Analisi pattern complessi.")
+            ax_ref.text(16, 42, f"LOGICA: {logic}", color='white', fontsize=10, ha='center', style='italic', wrap=True)
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.93])
+    # --- PUNTO 3: GESTIONE MANIACALE OUTPUT ---
+    # Generiamo un nome file unico basato sulla classe predetta e sull'ora esatta
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_name = f"pred_{best_label}_{timestamp}.png"
+    # Costruiamo il percorso completo: outputs/predictions/pred_CLASSE_DATA_ORA.png
+    save_path = PREDICTIONS_DIR / save_name
+    
+    # Salviamo l'immagine DPI-optimized PRIMA di mostrarla (plt.show() resetta la figura)
+    plt.savefig(save_path, dpi=150, facecolor='#121212')
+    print(f"🖼️  Analisi diagnostica salvata in ordinatamente in: {save_path}")
+    
+    # Mostriamo la dashboard a video
     plt.show()
 
-# --- MAIN ---
+# --- EXECUTION ---
 if __name__ == "__main__":
     try:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        hw = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+        hw_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
         
-        net = SimpleCNN().to(device)
-        net.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+        # Caricamento Modello CifarNet modulare
+        model = CifarNet().to(DEVICE)
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE, weights_only=True))
         
-        refs = get_ref_images()
-        files = [f for f in os.listdir(test_folder) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
-        if not files: exit()
+        # Preparazione Dati
+        ref_images = get_reference_images()
+        filename = get_smart_file()
+        full_path = TEST_IMAGES_DIR / filename
         
-        selected_file = get_smart_file(files)
-        img_p = os.path.join(test_folder, selected_file)
+        # Pipeline Preprocessing sincronizzata con il training
+        transform = transforms.Compose([
+            transforms.Resize((32, 32)),
+            transforms.ToTensor(),
+            transforms.Normalize(NORM_MEAN, NORM_STD)
+        ])
         
-        t = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-        input_t = t(Image.open(img_p).convert('RGB')).unsqueeze(0).to(device)
-        
-        net.eval()
+        # Caricamento Immagine
+        raw_img = Image.open(full_path).convert('RGB')
+        # Hint per Pylance: specifichiamo che è un Tensor
+        input_tensor: torch.Tensor = transform(raw_img) # type: ignore
+        input_batch = input_tensor.unsqueeze(0).to(DEVICE)
+
+        # 1. Inferenza Standard
+        model.eval()
         with torch.no_grad():
-            out = net(input_t)
-            probs = F.softmax(out, dim=1)[0] * 100
+            output = model(input_batch)
+            probs = F.softmax(output, dim=1)[0] * 100
             top_p, top_i = torch.topk(probs, 3)
-            pred_class = classes[top_i[0].item()]
-            conf_val = top_p[0].item()
-
-        status = log_prediction_result(selected_file, pred_class, conf_val)
-
-        with torch.enable_grad():
-            heatmap = generate_grad_cam(net, input_t, top_i[0].item())
+            
+        # Cast espliciti (Anti-Pylance warning)
+        best_class = CLASSES[int(top_i[0])]
+        best_conf = float(top_p[0])
         
-        ambiguity = None
-        gap = top_p[0] - top_p[1]
-        if gap < 15.0:
-            ambiguity = f"⚠️ AMBIGUITÀ: Diff {pred_class.upper()}/{classes[top_i[1].item()].upper()} {gap:.1f}%"
+        # Registriamo l'esito
+        status = log_result(filename, best_class, best_conf)
 
-        show_master_dashboard(img_p, (pred_class, conf_val, top_p, top_i), heatmap, refs, hw, ambiguity, status)
+        # 2. Generazione XAI (Richiede gradienti abilitati)
+        # Puntiamo all'ultimo strato convoluzionale (conv3) della CifarNet
+        cam = GradCAM(model, model.conv3) 
+        heatmap = cam.generate(input_batch, int(top_i[0]))
+
+        # 3. Visualizzazione e Salvataggio Ordinato (Point 3 inside)
+        render_dashboard(full_path, (best_class, best_conf, top_p, top_i), heatmap, ref_images, hw_name, status)
 
     except Exception as e:
-        print(f"⚠️ Errore: {e}")
+        print(f"❌ ERRORE CRITICO: {e}")

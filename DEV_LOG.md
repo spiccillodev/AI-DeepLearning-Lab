@@ -107,11 +107,115 @@ L'obiettivo è scalare la complessità dal bianco e nero (1 canale) al colore (3
     
 
 - --
+## 🟦 Modulo 02: Deep Learning Image Classification (CIFAR-10)
 
+**Status**: 🏁 Production Ready | **Hardware Target**: NVIDIA GeForce RTX 3070 (Ampere)
+
+- --
+
+### 1\. 🏗️ Software Architecture & Design Patterns
+
+#### 1.1 Decoupling & Asset Management (Elite Standard)
+
+Il sistema è stato ingegnerizzato seguendo il principio della **Separation of Concerns (SoC)**. La struttura delle directory è stata standardizzata per garantire portabilità e scalabilità:
+
+-    **Source Logic (`/src`)**: Contiene esclusivamente script eseguibili e definizioni di classe. Il file `config.py` funge da **Single Source of Truth (SSoT)**, centralizzando iperparametri e costanti globali.
+    
+-    **Physical Separation of Assets**: I dataset (`/data`) e i checkpoint del modello (`/models`) sono stati estratti dalla cartella sorgente. Questo approccio previene il gonfiamento del repository Git e rispecchia i workflow di produzione dove gli asset risiedono in storage dedicati.
+    
+-    **Path Agnosticism**: Implementazione integrale della libreria **`pathlib`**. A differenza del legacy `os.path`, `pathlib` tratta i percorsi come oggetti, garantendo la risoluzione automatica delle discrepanze tra i separatori di directory (Windows `\` vs Unix `/`).
+    
+
+#### 1.2 Inference State & Persistence
+
+Per ottimizzare l'esperienza di testing, è stata introdotta una logica di **Short-term Memory Management**:
+
+-    **`prediction_history.txt`**: File di stato persistente (locazione: `outputs/logs/`) che memorizza gli identificativi univoci degli ultimi 3 asset processati.
+    
+-    **Algoritmo di Selezione**: Implementazione di un filtro di esclusione dinamico che garantisce una distribuzione pseudo-casuale delle immagini di test, evitando la ridondanza visuale durante le sessioni di validazione manuale.
+    
+
+- --
+
+### 2\. 🧠 Model Engineering: CifarNet Pipeline
+
+#### 2.1 Mathematical Preprocessing
+
+Il dataset CIFAR-10, composto da immagini RGB a 3 canali, richiede una normalizzazione statistica rigorosa per prevenire la saturazione delle attivazioni e stabilizzare la discesa del gradiente.
+
+Applicazione della trasformazione lineare:
+
+$$x\_{norm} = \\frac{x - \\mu}{\\sigma}$$
+
+Valori applicati (Standard CIFAR-10):
+
+- $\mu_{RGB} = [0.4914, 0.4822, 0.4465]$
+
+- $\sigma_{RGB} = [0.2023, 0.1994, 0.2010]$
+
+#### 2.2 Deep CNN Architecture
+
+La **CifarNet** è stata strutturata per l'estrazione gerarchica di feature complesse:
+
+-    **Feature Extraction Stage**: 3 Blocchi Convoluzionali profondi con kernel $3 \\times 3$, stride 1 e padding 1 per mantenere la risoluzione spaziale durante il filtraggio.
+    
+-    **Dimensionality Reduction**: Utilizzo di strati di `MaxPool2d(2, 2)` per il dimezzamento della risoluzione spaziale, forzando la rete ad apprendere pattern invarianti alla traslazione.
+    
+-    **Regularization Strategy**: Integrazione di uno strato di **Dropout (0.25)** nel blocco fully-connected per mitigare il fenomeno del *co-adaptation* dei neuroni, riducendo drasticamente il rischio di overfitting su dataset di piccola scala.
+    
+
+- --
+
+### ⚠️ Technical Problem Solving (Fix Log)
+
+| Issue                  | Root Cause Analysis (RCA)                                            | Resolution Method                                           |
+| ---------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------- |
+| OpenMP Error #15       | Conflitto di runtime causato da istanze multiple di `libiomp5md.dll` | Impostazione variabile `KMP_DUPLICATE_LIB_OK=TRUE`          |
+| Charmap Encoding Crash | Incompatibilità encoding `cp1252` con caratteri Unicode              | Migrazione completa a UTF-8 (`encoding='utf-8'`)            |
+| Type Inference Issue   | Limiti static analysis di Pylance su oggetti dinamici PyTorch        | Introduzione type hints + soppressione con `# type: ignore` |
+
+- --
+
+### 🔍 XAI: Explainable AI & Spatial Diagnostics
+
+#### 3.1 Grad-CAM Methodology
+
+Per validare il processo decisionale del modello, è stata implementata la tecnica **Grad-weighted Class Activation Mapping (Grad-CAM)**:
+
+-    **Hook Mechanism**: Utilizzo di *Forward* e *Backward Hooks* per catturare le mappe di attivazione e i gradienti dell'ultimo strato convoluzionale (`conv3`).
+    
+-    **Global Average Pooling (GAP)**: Calcolo dell'importanza dei canali tramite la media dei gradienti retropropagati:
+    
+  $$
+\alpha_k^c = \frac{1}{Z} \sum_i \sum_j \frac{\partial Y^c}{\partial A_{ij}^k}
+$$
+    
+-    **Heatmap Generation**: Generazione di una mappa termica spaziale tramite funzione di attivazione ReLU, sovrapposta all'immagine originale con Colormap JET (OpenCV) per evidenziare i "Region of Interest" (ROI) che hanno influenzato la classificazione.
+    
+
+#### 3.2 Master Dashboard
+
+Lo script `predict_plot.py` genera un output composito ad alta risoluzione (150 DPI) che include:
+
+1.  **Analisi Spaziale**: Heatmap Grad-CAM overlayed.
+    
+2.  **Probability Distribution**: Grafico a barre TOP-3 classi con indicatore di ambiguità (gap < 15%).
+    
+3.  **Visual Comparison**: Confronto diretto con campioni reali del dataset CIFAR-10 per validazione morfologica.
+    
+
+- --
+
+### 📊 Operations & Benchmarking
+
+-    **Logging**: Sistema di logging persistente in formato CSV con tracking di metadati temporali, confidenza e target ground-truth.
+    
+-    **GPU Utilization**: Ottimizzazione del trasferimento dei tensori (`.to(DEVICE)`) per minimizzare il bottleneck CPU-GPU sulla RTX 3070.
+- --
 **Ultimo Aggiornamento:** 20 Aprile 2026
 
 **Hardware Target:** NVIDIA GeForce RTX 3070/4060
 
-**Status:** Modulo 01 Verificato, Stabilizzato e Pushato.
+**Status:** Modulo 02 Verificato, Stabilizzato e Pushato.
 
 - --
