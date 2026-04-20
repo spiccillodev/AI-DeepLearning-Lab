@@ -52,6 +52,16 @@ ai_gpu/
 # Rimuovi o commenta la riga **/logs/ se vuoi caricare i log in outputs/logs/
 #! **/logs/  <-- ELIMINATA PER MOSTRARE I RISULTATI
 
+# =========================
+# 🔹 OUTPUTS & RESULTS
+# =========================
+**/outputs/*
+# Eccezioni: NON ignorare i .gitkeep e i file grafici/log che vogliamo su GitHub
+!**/outputs/.gitkeep
+!**/outputs/*.png
+!**/outputs/*.csv
+!**/outputs/*.txt
+
 
 # =========================
 # 🔹 FILE TEMPORANEI
