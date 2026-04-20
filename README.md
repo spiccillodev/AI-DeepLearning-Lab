@@ -32,7 +32,7 @@ Benvenuti nel mio laboratorio di ***Computer Vision***. Questo repository rappre
 
 > _Riferimento progettuale:_
 > <img src="https://img.shields.io/badge/Scope-MNIST%20%7C%20CIFAR10%20Experiments-orange">
-![Esempio Analysis](assets\img\General\comprehensive_analysis.png)
+![Esempio Analysis](assets/img/General/comprehensive_analysis.png)
 
 ---
 
