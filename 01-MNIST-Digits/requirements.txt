@@ -5,10 +5,14 @@ numpy>=1.24.0
 protobuf
 onnx==1.21.0
 onnxscript==0.6.2
+pandas==3.0.2
 
 # --- VISUALIZATION & GUI ---
 matplotlib>=3.7.0
+seaborn==0.13.2
 Pillow>=9.5.0
+jupyterlab>=4.5.6
+ipykernel>=7.2.0
 
 # --- TELEMETRY & TOOLS ---
 tqdm>=4.65.0
