@@ -188,7 +188,6 @@ Il processo di creazione e validazione di ogni modello segue rigorosamente una p
 │   └── [5.png](./01-MNIST-Digits/test/5.png)
 └── 📄 [requirements.txt](./01-MNIST-Digits/requirements.txt) - Dipendenze del modulo
 
-
 - **Dataset:** 60.000 immagini di training e 10.000 di test, dimensioni 28x28 pixel in scala di grigi.
 - **Architecture:** `Dual Conv2d` + `Dual MaxPool` + `Linear Classification Head`.
 
