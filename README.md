@@ -197,7 +197,7 @@ Il processo di creazione e validazione di ogni modello segue rigorosamente una p
 <br><br>
 #### Caratteristiche Principali:
 
-***Auto-Cleanup***: La cartella [outputss](./01-MNIST-Digits/outputss) viene ottimizzata automaticamente a ogni avvio per evitare accumuli di spazio.
+***Auto-Cleanup***: La cartella [outputss](./01-MNIST-Digits/outputs) viene ottimizzata automaticamente a ogni avvio per evitare accumuli di spazio.
 
 ***Hyperparameter Testing***: Il sistema testa sequenzialmente diversi Learning Rates (es. 0.01, 0.001, 0.0001) per trovare il setup ideale.
 
